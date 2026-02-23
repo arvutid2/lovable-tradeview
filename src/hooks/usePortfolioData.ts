@@ -1,53 +1,71 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { useState, useEffect } from 'react';
+import { supabase } from "@/integrations/supabase/client";
+
+/**
+ * Portfelli andmete liides vastavalt Supabase tabelile 'portfolio'
+ */
+export interface Portfolio {
+  id: number;
+  usdt_balance: number;
+  btc_balance: number;
+  total_value_usdt: number;
+  last_updated: string;
+}
 
 export const usePortfolioData = () => {
-  const [portfolio, setPortfolio] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
+  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const fetchPortfolio = async () => {
-    try {
-      // Võtame ainult kõige viimase seisuga rea
-      const { data, error } = await supabase
-        .from('portfolio')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (error) throw error;
-
-      console.debug('fetchPortfolio: data:', data, 'error:', error);
-      if (data && data.length > 0) {
-        console.debug('fetchPortfolio: setting portfolio to', data[0]);
-        setPortfolio(data[0]);
-      } else {
-        console.debug('fetchPortfolio: no portfolio rows returned');
-      }
-
-      // Võtame kõik read graafiku jaoks
-      const { data: historyData, error: historyError } = await supabase
-        .from('portfolio')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-      if (historyError) throw historyError;
-      console.debug('fetchPortfolio: historyData length:', (historyData || []).length);
-      setHistory(historyData || []);
-
-    } catch (error) {
-      console.error("Viga andmete pärimisel:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPortfolio();
-    // Uuendame andmeid iga 60 sekundi järel
-    const interval = setInterval(fetchPortfolio, 60000);
-    return () => clearInterval(interval);
-  }, []); // <--- See [] on väga oluline!
+    const fetchPortfolio = async () => {
+      try {
+        setLoading(true);
+        
+        // Kasutame 'last_updated' tulpa, kuna 'created_at' puudub tabelis
+        const { data, error: supabaseError } = await supabase
+          .from('portfolio')
+          .select('*')
+          .order('last_updated', { ascending: false }) 
+          .limit(1)
+          .maybeSingle(); // Võtab ühe rea või tagastab nulli ilma veata
 
-  return { portfolio, history, loading };
+        if (supabaseError) {
+          console.error('Supabase fetch error:', supabaseError);
+          throw new Error(supabaseError.message);
+        }
+
+        if (data) {
+          setPortfolio(data as Portfolio);
+        } else {
+          console.warn('Portfolio table is empty. Please ensure row with ID 1 exists.');
+        }
+
+      } catch (err: any) {
+        setError(err.message);
+        console.error('Error in usePortfolioData:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPortfolio();
+
+    // Tellime reaalajas uuendused, et Dashboard püsiks värske
+    const subscription = supabase
+      .channel('portfolio-updates')
+      .on('postgres_changes', 
+        { event: 'UPDATE', schema: 'public', table: 'portfolio' }, 
+        (payload) => {
+          setPortfolio(payload.new as Portfolio);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, []);
+
+  return { portfolio, loading, error };
 };
