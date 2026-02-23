@@ -5,11 +5,11 @@ import { supabase } from "@/integrations/supabase/client";
  * Portfelli andmete liides vastavalt Supabase tabelile 'portfolio'
  */
 export interface Portfolio {
-  id: number;
-  usdt_balance: number;
-  btc_balance: number;
+  id: string;
+  usdt_balance?: number | null;
+  btc_balance?: number | null;
   total_value_usdt: number;
-  last_updated: string;
+  created_at: string;
 }
 
 export const usePortfolioData = () => {
@@ -22,11 +22,11 @@ export const usePortfolioData = () => {
       try {
         setLoading(true);
         
-        // Kasutame 'last_updated' tulpa, kuna 'created_at' puudub tabelis
+        // Kasutame 'created_at' tulpa
         const { data, error: supabaseError } = await supabase
           .from('portfolio')
           .select('*')
-          .order('last_updated', { ascending: false }) 
+          .order('created_at', { ascending: false }) 
           .limit(1)
           .maybeSingle(); // Võtab ühe rea või tagastab nulli ilma veata
 
@@ -38,7 +38,7 @@ export const usePortfolioData = () => {
         if (data) {
           setPortfolio(data as Portfolio);
         } else {
-          console.warn('Portfolio table is empty. Please ensure row with ID 1 exists.');
+          console.warn('Portfolio table is empty.');
         }
 
       } catch (err: any) {
