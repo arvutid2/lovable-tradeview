@@ -7,9 +7,28 @@ import { useTradeData } from "@/hooks/useTradeData";
 import { usePortfolioData } from "@/hooks/usePortfolioData";
 
 const Index = () => {
-  // Me lisasime useTradeData-sse varem 'totalPnL', võtame selle ka siit välja
-  const { trades, latest, chartData, loading } = useTradeData();
-  const portfolio = usePortfolioData();
+  const { trades, loading: tradesLoading } = useTradeData();
+  const { portfolio, loading: portfolioLoading } = usePortfolioData();
+
+  // Valmistame andmed ette nii, nagu komponendid neid ootavad
+  const latestTrade = trades && trades.length > 0 ? trades[0] : null;
+  
+  // Arvutame PnL (põhineb sinu pildil nähtud 10k algkapitalil)
+  const initialCapital = 10000;
+  const currentTotalValue = portfolio?.total_value_usdt || 0;
+  const pnl = currentTotalValue - initialCapital;
+  const pnlPercent = (pnl / initialCapital) * 100;
+
+  // Teeme graafiku jaoks andmed trade_logs tabelist
+  const chartData = [...trades]
+    .reverse()
+    .map((t) => ({
+      time: new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      price: t.price,
+      value: t.price // Või mõni muu numbriline näitaja graafiku jaoks
+    }));
+
+  const loading = tradesLoading || portfolioLoading;
 
   return (
     <div className="min-h-screen bg-background bg-grid">
@@ -34,23 +53,21 @@ const Index = () => {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-6 space-y-6">
         
-        {/* Kasutame div-ümbriseid, et vältida Ref-vigu */}
         <div className="stats-wrapper">
           <PortfolioStats
-            latest={portfolio.latest}
-            history={portfolio.history}
-            pnl={portfolio.pnl}
-            pnlPercent={portfolio.pnlPercent}
-            loading={portfolio.loading}
+            latest={portfolio}
+            history={[]} // Võime jätta tühjaks või lisada hiljem
+            pnl={pnl}
+            pnlPercent={pnlPercent}
+            loading={portfolioLoading}
           />
         </div>
 
         <div className="hero-wrapper">
-          <HeroStats latest={latest} loading={loading} />
+          <HeroStats latest={latestTrade} loading={loading} />
         </div>
 
         <div className="chart-wrapper">
-          {/* PriceChart vajab andmeid. Kui chartData on tühi, näidatakse tühjust */}
           <PriceChart data={chartData} />
         </div>
 
@@ -60,7 +77,7 @@ const Index = () => {
             <SignalsLog trades={trades} />
           </div>
           <div className="insight-wrapper">
-            <AIInsightFeed latest={latest} trades={trades} />
+            <AIInsightFeed latest={latestTrade} trades={trades} />
           </div>
         </div>
       </main>
@@ -68,7 +85,7 @@ const Index = () => {
       {/* Footer */}
       <footer className="border-t border-border/50 px-4 md:px-8 py-3 mt-8">
         <div className="max-w-7xl mx-auto text-center text-xs font-mono text-muted-foreground">
-          v10.1 Sentinel Active • Database: {latest ? 'CONNECTED' : 'WAITING...'}
+          v10.1 Sentinel Active • Database: {portfolio ? 'CONNECTED' : 'WAITING...'}
         </div>
       </footer>
     </div>
