@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import type { Tables } from "@/integrations/supabase/types";
 
 type TradeLog = Tables<"trade_logs">;
