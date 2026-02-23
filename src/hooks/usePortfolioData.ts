@@ -16,9 +16,13 @@ export const usePortfolioData = () => {
         .limit(1);
 
       if (error) throw error;
-      
+
+      console.debug('fetchPortfolio: data:', data, 'error:', error);
       if (data && data.length > 0) {
+        console.debug('fetchPortfolio: setting portfolio to', data[0]);
         setPortfolio(data[0]);
+      } else {
+        console.debug('fetchPortfolio: no portfolio rows returned');
       }
 
       // Võtame kõik read graafiku jaoks
@@ -28,6 +32,7 @@ export const usePortfolioData = () => {
         .order('created_at', { ascending: true });
 
       if (historyError) throw historyError;
+      console.debug('fetchPortfolio: historyData length:', (historyData || []).length);
       setHistory(historyData || []);
 
     } catch (error) {
