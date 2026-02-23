@@ -1,15 +1,8 @@
-import { useEffect, useState } from "react";
-import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
-import type { Tables } from "@/integrations/supabase/types";
-
-type TradeLog = Tables<"trade_logs">;
-
 export function useTradeData() {
   const [trades, setTrades] = useState<TradeLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Initial fetch
     const fetchTrades = async () => {
       const { data, error } = await supabase
         .from("trade_logs")
@@ -25,7 +18,6 @@ export function useTradeData() {
 
     fetchTrades();
 
-    // Realtime subscription
     const channel = supabase
       .channel("trade_logs_realtime")
       .on(
@@ -44,7 +36,23 @@ export function useTradeData() {
   }, []);
 
   const latest = trades[0] || null;
-  const chartData = [...trades].reverse();
+  
+  // GRAAFIKU ANDMED: Sorteerime aja järgi õigesse pidi (vanemad enne)
+  const chartData = [...trades]
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    .map(t => ({
+      ...t,
+      // Veendume, et numbrid on numbrid (vahel tulevad stringina)
+      price: Number(t.price),
+      pnl: t.pnl ? Number(t.pnl) : 0,
+      bot_confidence: Number(t.bot_confidence)
+    }));
 
-  return { trades, latest, chartData, loading };
+  // ARVUTAME KOKKU PnL (ainult ridadelt, kus on reaalselt kasum kirjas)
+  const totalPnL = trades.reduce((sum, trade) => {
+    const value = trade.pnl ? Number(trade.pnl) : 0;
+    return sum + value;
+  }, 0);
+
+  return { trades, latest, chartData, totalPnL, loading };
 }
