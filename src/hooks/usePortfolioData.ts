@@ -1,3 +1,9 @@
+import { useState, useEffect } from "react";
+import { supabase } from "../integrations/supabase/client";
+import type { Tables } from "../integrations/supabase/types";
+
+export type PortfolioRow = Tables<"portfolio">;
+
 export function usePortfolioData() {
   const [history, setHistory] = useState<PortfolioRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -10,7 +16,7 @@ export function usePortfolioData() {
         .order("created_at", { ascending: true });
 
       if (!error && data) {
-        setHistory(data as PortfolioRow[]);
+        setHistory(data);
       }
       setLoading(false);
     };
