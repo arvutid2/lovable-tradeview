@@ -41,6 +41,9 @@ export type Database = {
           price: number
           rsi: number | null
           symbol: string
+          bot_confidence: number | null
+          pnl: number | null
+          market_pressure: number | null
         }
         Insert: {
           action?: string
@@ -50,6 +53,9 @@ export type Database = {
           price: number
           rsi?: number | null
           symbol?: string
+          bot_confidence?: number | null
+          pnl?: number | null
+          market_pressure?: number | null
         }
         Update: {
           action?: string
@@ -59,6 +65,9 @@ export type Database = {
           price?: number
           rsi?: number | null
           symbol?: string
+          bot_confidence?: number | null
+          pnl?: number | null
+          market_pressure?: number | null
         }
         Relationships: []
       }

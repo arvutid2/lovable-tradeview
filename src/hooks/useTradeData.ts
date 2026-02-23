@@ -1,20 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from "@/integrations/supabase/client";
+import type { Tables } from "@/integrations/supabase/types";
 
-export interface TradeLog {
-  id: string; // Muutsin stringiks, kuna UUID on tavaliselt string
-  created_at: string;
-  symbol: string;
-  price: number;
-  action: string;
-  analysis_summary: string;
-  bot_confidence: number;
-  market_pressure?: number;
-  fear_greed_index?: number;
-  is_panic_mode?: boolean;
-  rsi?: number;
-  pnl?: number | null; // Lisatud pnl tugi
-}
+export type TradeLog = Tables<"trade_logs">;
 
 export const useTradeData = () => {
   const [trades, setTrades] = useState<TradeLog[]>([]);

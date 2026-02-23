@@ -12,7 +12,7 @@ export const usePortfolioData = () => {
       const { data, error } = await supabase
         .from('portfolio')
         .select('*')
-        .order('last_updated', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(1);
 
       if (error) throw error;
@@ -25,7 +25,7 @@ export const usePortfolioData = () => {
       const { data: historyData, error: historyError } = await supabase
         .from('portfolio')
         .select('*')
-        .order('last_updated', { ascending: true });
+        .order('created_at', { ascending: true });
 
       if (historyError) throw historyError;
       setHistory(historyData || []);
