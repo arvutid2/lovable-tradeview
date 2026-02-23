@@ -1,22 +1,19 @@
 import { useState, useEffect } from 'react';
 import { supabase } from "@/integrations/supabase/client";
 
-// Defineerime täpselt need väljad, mida pildil 6 nägime
 export interface TradeLog {
-  id: number;
+  id: string; // Muutsin stringiks, kuna UUID on tavaliselt string
   created_at: string;
   symbol: string;
   price: number;
-  vol: number;
   action: string;
   analysis_summary: string;
   bot_confidence: number;
-  market_pressure: number;
-  fear_greed_index: number;
-  is_panic_mode: boolean;
-  // LISA NEED READ SIIT:
-  pnl?: number | null; 
-  rsi?: number | null;
+  market_pressure?: number;
+  fear_greed_index?: number;
+  is_panic_mode?: boolean;
+  rsi?: number;
+  pnl?: number | null; // Lisatud pnl tugi
 }
 
 export const useTradeData = () => {
@@ -25,7 +22,6 @@ export const useTradeData = () => {
 
   const fetchTrades = async () => {
     try {
-      // Teeme päringu ilma tüübi sundimiseta alguses
       const { data, error } = await supabase
         .from('trade_logs')
         .select('*')
@@ -33,14 +29,20 @@ export const useTradeData = () => {
         .limit(50);
 
       if (error) {
-        console.error('Supabase error fetching trades:', error);
+        console.error('Supabase error:', error);
         return;
       }
-      
-      // Kasutame 'unknown' vaheetappi, et TypeScript ei pahandaks
-      setTrades((data as unknown as TradeLog[]) || []);
+
+      // Teisendame andmed ja tagame, et pnl on olemas
+      const transformedData: TradeLog[] = (data || []).map((item: any) => ({
+        ...item,
+        pnl: item.pnl !== undefined ? item.pnl : null,
+        rsi: item.rsi || 0
+      }));
+
+      setTrades(transformedData);
     } catch (err) {
-      console.error('Unexpected error in useTradeData:', err);
+      console.error('Error fetching trades:', err);
     } finally {
       setLoading(false);
     }
@@ -48,7 +50,7 @@ export const useTradeData = () => {
 
   useEffect(() => {
     fetchTrades();
-    const interval = setInterval(fetchTrades, 15000);
+    const interval = setInterval(fetchTrades, 10000);
     return () => clearInterval(interval);
   }, []);
 
