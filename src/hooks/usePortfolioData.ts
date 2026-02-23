@@ -1,14 +1,3 @@
-import { useEffect, useState } from "react";
-import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
-
-export interface PortfolioRow {
-  id: string;
-  total_value_usdt: number;
-  btc_balance: number;
-  usdt_balance: number;
-  created_at: string;
-}
-
 export function usePortfolioData() {
   const [history, setHistory] = useState<PortfolioRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,8 +7,7 @@ export function usePortfolioData() {
       const { data, error } = await supabase
         .from("portfolio")
         .select("*")
-        .order("created_at", { ascending: true })
-        .limit(500);
+        .order("created_at", { ascending: true });
 
       if (!error && data) {
         setHistory(data as PortfolioRow[]);
@@ -33,10 +21,10 @@ export function usePortfolioData() {
       .channel("portfolio_realtime")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "portfolio" },
-        (payload) => {
-          const row = payload.new as PortfolioRow;
-          setHistory((prev) => [...prev, row].slice(-500));
+        // MUUDATUS: Kuulame ka UPDATE sündmusi, sest bot uuendab rida id=1
+        { event: "*", schema: "public", table: "portfolio" }, 
+        () => {
+          fetch(); // Lihtsuse mõttes küsime andmed uuesti, kui midagi muutub
         }
       )
       .subscribe();
@@ -47,9 +35,13 @@ export function usePortfolioData() {
   }, []);
 
   const latest = history.length > 0 ? history[history.length - 1] : null;
-  const startingBalance = 10000;
+  
+  // MUUDATUS: Ära kasuta 10000, kui sa ei alustanud sellega. 
+  // Võtame algseks balansiks ajaloo esimese sissekande või määra oma päris algsumma:
+  const startingBalance = history.length > 0 ? history[0].total_value_usdt : 100; 
+  
   const pnl = latest ? latest.total_value_usdt - startingBalance : 0;
-  const pnlPercent = latest ? ((latest.total_value_usdt - startingBalance) / startingBalance) * 100 : 0;
+  const pnlPercent = latest && startingBalance !== 0 ? ((latest.total_value_usdt - startingBalance) / startingBalance) * 100 : 0;
 
   return { history, latest, pnl, pnlPercent, loading };
 }
