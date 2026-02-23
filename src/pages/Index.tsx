@@ -8,31 +8,30 @@ import { usePortfolioData } from "@/hooks/usePortfolioData";
 
 const Index = () => {
   const { trades, loading: tradesLoading } = useTradeData();
-  const { portfolio, loading: portfolioLoading } = usePortfolioData();
+  // Võtame hookist välja ka 'history'
+  const { portfolio, history, loading: portfolioLoading } = usePortfolioData();
 
-  // Valmistame andmed ette nii, nagu komponendid neid ootavad
   const latestTrade = trades && trades.length > 0 ? trades[0] : null;
   
-  // Arvutame PnL (põhineb sinu pildil nähtud 10k algkapitalil)
+  // Algkapital on 10 000. Kasutame Number(), et olla kindlad, et arvutame numbritega
   const initialCapital = 10000;
-  const currentTotalValue = portfolio?.total_value_usdt || 0;
-  const pnl = currentTotalValue - initialCapital;
-  const pnlPercent = (pnl / initialCapital) * 100;
+  const currentTotalValue = portfolio ? Number(portfolio.total_value_usdt) : 0;
+  const pnl = currentTotalValue > 0 ? currentTotalValue - initialCapital : 0;
+  const pnlPercent = currentTotalValue > 0 ? (pnl / initialCapital) * 100 : 0;
 
-  // Teeme graafiku jaoks andmed trade_logs tabelist
-  const chartData = [...trades]
-    .reverse()
-    .map((t) => ({
-      time: new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      price: t.price,
-      value: t.price // Või mõni muu numbriline näitaja graafiku jaoks
-    }));
+  // Graafiku andmed trade_logs tabelist
+  const chartData = trades && trades.length > 0 
+    ? [...trades].reverse().map((t) => ({
+        time: new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        price: Number(t.price),
+        value: Number(t.price)
+      }))
+    : [];
 
   const loading = tradesLoading || portfolioLoading;
 
   return (
     <div className="min-h-screen bg-background bg-grid">
-      {/* Header */}
       <header className="border-b border-border/50 px-4 md:px-8 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -50,13 +49,12 @@ const Index = () => {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-6 space-y-6">
         
         <div className="stats-wrapper">
           <PortfolioStats
             latest={portfolio}
-            history={[]} // Võime jätta tühjaks või lisada hiljem
+            history={history || []} // Nüüd on history päriselt olemas
             pnl={pnl}
             pnlPercent={pnlPercent}
             loading={portfolioLoading}
@@ -71,7 +69,6 @@ const Index = () => {
           <PriceChart data={chartData} />
         </div>
 
-        {/* Bottom Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="logs-wrapper">
             <SignalsLog trades={trades} />
@@ -82,7 +79,6 @@ const Index = () => {
         </div>
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-border/50 px-4 md:px-8 py-3 mt-8">
         <div className="max-w-7xl mx-auto text-center text-xs font-mono text-muted-foreground">
           v10.1 Sentinel Active • Database: {portfolio ? 'CONNECTED' : 'WAITING...'}
