@@ -9,29 +9,17 @@ export const usePortfolioData = () => {
 
   const fetchPortfolio = async () => {
     try {
-      console.log("Fetching portfolio data...");
       const { data, error } = await supabase
         .from('portfolio')
         .select('*')
-        // KASUTAME 'last_updated' tulpa, sest sinu pildil on see olemas
-        .order('last_updated', { ascending: false }) 
+        .order('last_updated', { ascending: false }) // Kasutame õiget tulpa!
         .limit(1)
         .maybeSingle();
 
-      if (error) {
-        console.error("Supabase error:", error);
-        throw error;
-      }
-
-      console.log("Portfolio data received:", data);
+      if (error) throw error;
       setPortfolio(data);
     } catch (error: any) {
       console.error('Error fetching portfolio:', error.message);
-      toast({
-        variant: "destructive",
-        title: "Viga andmete laadimisel",
-        description: error.message,
-      });
     } finally {
       setLoading(false);
     }
@@ -39,11 +27,9 @@ export const usePortfolioData = () => {
 
   useEffect(() => {
     fetchPortfolio();
-
-    // Uuenda andmeid iga 30 sekundi järel
-    const interval = setInterval(fetchPortfolio, 30000);
+    const interval = setInterval(fetchPortfolio, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  return { portfolio, loading, refetch: fetchPortfolio };
+  return { portfolio, loading };
 };
