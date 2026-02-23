@@ -1,47 +1,49 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from 'react';
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
-export interface PortfolioRow {
-  id: number;
-  total_value_usdt: number;
-  btc_balance: number;
-  usdt_balance: number;
-}
-
-export function usePortfolioData() {
-  const [history, setHistory] = useState<PortfolioRow[]>([]);
+export const usePortfolioData = () => {
+  const [portfolio, setPortfolio] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
   const fetchPortfolio = async () => {
-    // EEMALDATUD order() ja limit(), et vältida Error 400
-    const { data, error } = await supabase
-      .from("portfolio")
-      .select("id, total_value_usdt, btc_balance, usdt_balance");
+    try {
+      console.log("Fetching portfolio data...");
+      const { data, error } = await supabase
+        .from('portfolio')
+        .select('*')
+        // KASUTAME 'last_updated' tulpa, sest sinu pildil on see olemas
+        .order('last_updated', { ascending: false }) 
+        .limit(1)
+        .maybeSingle();
 
-    if (!error && data) {
-      setHistory(data as PortfolioRow[]);
-    } else {
-      console.error("Supabase error:", error);
+      if (error) {
+        console.error("Supabase error:", error);
+        throw error;
+      }
+
+      console.log("Portfolio data received:", data);
+      setPortfolio(data);
+    } catch (error: any) {
+      console.error('Error fetching portfolio:', error.message);
+      toast({
+        variant: "destructive",
+        title: "Viga andmete laadimisel",
+        description: error.message,
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
     fetchPortfolio();
 
-    const channel = supabase
-      .channel("portfolio_realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "portfolio" }, 
-      () => fetchPortfolio())
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    // Uuenda andmeid iga 30 sekundi järel
+    const interval = setInterval(fetchPortfolio, 30000);
+    return () => clearInterval(interval);
   }, []);
 
-  const latest = history.length > 0 ? history[0] : null;
-  const startingBalance = 100; // Sinu algne summa
-  const pnl = latest ? Number(latest.total_value_usdt) - startingBalance : 0;
-  const pnlPercent = latest ? (pnl / startingBalance) * 100 : 0;
-
-  return { history, latest, pnl, pnlPercent, loading };
-}
+  return { portfolio, loading, refetch: fetchPortfolio };
+};
