@@ -2,10 +2,13 @@ import { HeroStats } from "@/components/dashboard/HeroStats";
 import { PriceChart } from "@/components/dashboard/PriceChart";
 import { SignalsLog } from "@/components/dashboard/SignalsLog";
 import { AIInsightFeed } from "@/components/dashboard/AIInsightFeed";
+import { PortfolioStats } from "@/components/dashboard/PortfolioStats";
 import { useTradeData } from "@/hooks/useTradeData";
+import { usePortfolioData } from "@/hooks/usePortfolioData";
 
 const Index = () => {
   const { trades, latest, chartData, loading } = useTradeData();
+  const portfolio = usePortfolioData();
 
   return (
     <div className="min-h-screen bg-background bg-grid">
@@ -29,6 +32,15 @@ const Index = () => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-6 space-y-6">
+        {/* Portfolio Stats */}
+        <PortfolioStats
+          latest={portfolio.latest}
+          history={portfolio.history}
+          pnl={portfolio.pnl}
+          pnlPercent={portfolio.pnlPercent}
+          loading={portfolio.loading}
+        />
+
         {/* Hero Stats */}
         <HeroStats latest={latest} loading={loading} />
 
