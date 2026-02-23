@@ -1,21 +1,23 @@
 import { useState, useEffect } from 'react';
-// VEA PARANDUS 1: Veendu, et import viitab õigele asukohale. 
-// Tavaliselt on see @/lib/supabase või @/integrations/supabase/client
-import { supabase } from "@/lib/supabase"; 
+// Kasutame Lovable'i vaikimisi klienti
+import { supabase } from "@/integrations/supabase/client";
 
-// Defineerime Trade tüübi, et vältida "implicit any" vigu
-export interface Trade {
-  id: string;
-  symbol: string;
-  side: 'BUY' | 'SELL';
-  price: number;
-  amount: number;
-  total: number;
+export interface TradeLog {
+  id: number;
   created_at: string;
+  symbol: string;
+  price: number;
+  vol: number;
+  action: string;
+  analysis_summary: string;
+  bot_confidence: number;
+  market_pressure: number;
+  fear_greed_index: number;
+  is_panic_mode: boolean;
 }
 
 export const useTradeData = () => {
-  const [trades, setTrades] = useState<Trade[]>([]); // Kasutame tüüpi any asemel
+  const [trades, setTrades] = useState<TradeLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchTrades = async () => {
@@ -26,12 +28,14 @@ export const useTradeData = () => {
         .order('created_at', { ascending: false })
         .limit(50);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        return;
+      }
       
-      // Valikuline: Teisendame andmed, kui baasist tulevad nimed erinevad
-      setTrades((data as Trade[]) || []);
-    } catch (err: any) {
-      console.error('Error fetching trades:', err.message);
+      setTrades(data as TradeLog[] || []);
+    } catch (err) {
+      console.error('Unexpected error fetching trades:', err);
     } finally {
       setLoading(false);
     }
@@ -39,7 +43,7 @@ export const useTradeData = () => {
 
   useEffect(() => {
     fetchTrades();
-    const interval = setInterval(fetchTrades, 10000);
+    const interval = setInterval(fetchTrades, 15000); // 15 sekundi järel on piisav
     return () => clearInterval(interval);
   }, []);
 
