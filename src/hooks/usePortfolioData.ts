@@ -1,36 +1,46 @@
-import { useState, useEffect } from "react";
-import { supabase } from "../integrations/supabase/client";
-import type { Tables } from "../integrations/supabase/types";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 
-export type PortfolioRow = Tables<"portfolio">;
+// Defineerime tüübi otse andmebaasi skeemist
+type PortfolioRow = Database["public"]["Tables"]["portfolio"]["Row"];
 
 export function usePortfolioData() {
   const [history, setHistory] = useState<PortfolioRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetch = async () => {
+  const fetchPortfolio = async () => {
+    try {
+      // Eemaldasime .order("created_at"), et vältida Error 400
       const { data, error } = await supabase
         .from("portfolio")
         .select("*")
-        .order("created_at", { ascending: true });
+        .eq("id", 1); // Võtame boti põhiseisu
 
-      if (!error && data) {
-        setHistory(data);
+      if (error) {
+        console.error("Portfolio fetch error:", error);
+      } else if (data) {
+        setHistory(data as PortfolioRow[]);
       }
+    } catch (err) {
+      console.error("Unexpected error fetching portfolio:", err);
+    } finally {
       setLoading(false);
-    };
+    }
+  };
 
-    fetch();
+  useEffect(() => {
+    // 1. Algne pärimine
+    fetchPortfolio();
 
+    // 2. Reaalajas uuendamine (kui bot teeb UPDATE käsu)
     const channel = supabase
-      .channel("portfolio_realtime")
+      .channel("portfolio_changes")
       .on(
         "postgres_changes",
-        // MUUDATUS: Kuulame ka UPDATE sündmusi, sest bot uuendab rida id=1
-        { event: "*", schema: "public", table: "portfolio" }, 
+        { event: "*", schema: "public", table: "portfolio" },
         () => {
-          fetch(); // Lihtsuse mõttes küsime andmed uuesti, kui midagi muutub
+          fetchPortfolio();
         }
       )
       .subscribe();
@@ -40,14 +50,20 @@ export function usePortfolioData() {
     };
   }, []);
 
-  const latest = history.length > 0 ? history[history.length - 1] : null;
+  const latest = history.length > 0 ? history[0] : null;
   
-  // MUUDATUS: Ära kasuta 10000, kui sa ei alustanud sellega. 
-  // Võtame algseks balansiks ajaloo esimese sissekande või määra oma päris algsumma:
-  const startingBalance = history.length > 0 ? history[0].total_value_usdt : 100; 
+  // Arvutame PnL tuginedes 100 USDT alginvesteeringule (või muuda see oma summaks)
+  const startingBalance = 100; 
+  const currentTotal = latest ? Number(latest.total_value_usdt || 0) : startingBalance;
   
-  const pnl = latest ? latest.total_value_usdt - startingBalance : 0;
-  const pnlPercent = latest && startingBalance !== 0 ? ((latest.total_value_usdt - startingBalance) / startingBalance) * 100 : 0;
+  const pnl = currentTotal - startingBalance;
+  const pnlPercent = (pnl / startingBalance) * 100;
 
-  return { history, latest, pnl, pnlPercent, loading };
+  return { 
+    history, 
+    latest, 
+    pnl: Number(pnl.toFixed(2)), 
+    pnlPercent: Number(pnlPercent.toFixed(2)), 
+    loading 
+  };
 }
