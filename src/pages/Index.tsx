@@ -7,6 +7,7 @@ import { useTradeData } from "@/hooks/useTradeData";
 import { usePortfolioData } from "@/hooks/usePortfolioData";
 
 const Index = () => {
+  // Me lisasime useTradeData-sse varem 'totalPnL', võtame selle ka siit välja
   const { trades, latest, chartData, loading } = useTradeData();
   const portfolio = usePortfolioData();
 
@@ -24,7 +25,7 @@ const Index = () => {
             </h1>
           </div>
           <div className="flex items-center gap-3 text-xs font-mono text-muted-foreground">
-            <span className="hidden sm:inline">LIVE</span>
+            <span className="hidden sm:inline">LIVE STATUS</span>
             <span className="w-1.5 h-1.5 rounded-full bg-[hsl(var(--neon-green))] animate-pulse" />
           </div>
         </div>
@@ -32,32 +33,42 @@ const Index = () => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-6 space-y-6">
-        {/* Portfolio Stats */}
-        <PortfolioStats
-          latest={portfolio.latest}
-          history={portfolio.history}
-          pnl={portfolio.pnl}
-          pnlPercent={portfolio.pnlPercent}
-          loading={portfolio.loading}
-        />
+        
+        {/* Kasutame div-ümbriseid, et vältida Ref-vigu */}
+        <div className="stats-wrapper">
+          <PortfolioStats
+            latest={portfolio.latest}
+            history={portfolio.history}
+            pnl={portfolio.pnl}
+            pnlPercent={portfolio.pnlPercent}
+            loading={portfolio.loading}
+          />
+        </div>
 
-        {/* Hero Stats */}
-        <HeroStats latest={latest} loading={loading} />
+        <div className="hero-wrapper">
+          <HeroStats latest={latest} loading={loading} />
+        </div>
 
-        {/* Price Chart */}
-        <PriceChart data={chartData} />
+        <div className="chart-wrapper">
+          {/* PriceChart vajab andmeid. Kui chartData on tühi, näidatakse tühjust */}
+          <PriceChart data={chartData} />
+        </div>
 
         {/* Bottom Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <SignalsLog trades={trades} />
-          <AIInsightFeed latest={latest} trades={trades} />
+          <div className="logs-wrapper">
+            <SignalsLog trades={trades} />
+          </div>
+          <div className="insight-wrapper">
+            <AIInsightFeed latest={latest} trades={trades} />
+          </div>
         </div>
       </main>
 
       {/* Footer */}
       <footer className="border-t border-border/50 px-4 md:px-8 py-3 mt-8">
         <div className="max-w-7xl mx-auto text-center text-xs font-mono text-muted-foreground">
-          Powered by AI Trading Bot • Real-time Data Feed
+          v10.1 Sentinel Active • Database: {latest ? 'CONNECTED' : 'WAITING...'}
         </div>
       </footer>
     </div>

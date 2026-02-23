@@ -53,14 +53,10 @@ export function useTradeData() {
     .map(t => ({
       ...t,
       price: Number(t.price),
-      bot_confidence: Number(t.bot_confidence),
-      pnl: t.pnl ? Number(t.pnl) : 0
+      rsi: t.rsi ? Number(t.rsi) : 0
     }));
-
-  // Arvutame kokku kogu kasumi (PnL)
-  const totalPnL = trades.reduce((sum, trade) => {
-    return sum + (trade.pnl ? Number(trade.pnl) : 0);
-  }, 0);
+   // Arvutame kokku kogu kasumi (PnL)
+  const totalPnL = 0;
 
   return { trades, latest, chartData, totalPnL, loading };
 }
