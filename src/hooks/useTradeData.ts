@@ -1,8 +1,17 @@
+import { useEffect, useState } from "react";
+// Kasutame kliendi importi Lovable integratsioonide kaustast
+import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
+
+// Defineerime TradeLog tüübi otse andmebaasi skeemist
+type TradeLog = Database["public"]["Tables"]["trade_logs"]["Row"];
+
 export function useTradeData() {
   const [trades, setTrades] = useState<TradeLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // 1. Algne andmete pärimine
     const fetchTrades = async () => {
       const { data, error } = await supabase
         .from("trade_logs")
@@ -11,13 +20,14 @@ export function useTradeData() {
         .limit(100);
 
       if (!error && data) {
-        setTrades(data);
+        setTrades(data as TradeLog[]);
       }
       setLoading(false);
     };
 
     fetchTrades();
 
+    // 2. Reaalajas jälgimine (Realtime subscription)
     const channel = supabase
       .channel("trade_logs_realtime")
       .on(
@@ -37,21 +47,19 @@ export function useTradeData() {
 
   const latest = trades[0] || null;
   
-  // GRAAFIKU ANDMED: Sorteerime aja järgi õigesse pidi (vanemad enne)
+  // Graafiku andmed - teeme kindlaks, et numbrid on õiged
   const chartData = [...trades]
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     .map(t => ({
       ...t,
-      // Veendume, et numbrid on numbrid (vahel tulevad stringina)
       price: Number(t.price),
-      pnl: t.pnl ? Number(t.pnl) : 0,
-      bot_confidence: Number(t.bot_confidence)
+      bot_confidence: Number(t.bot_confidence),
+      pnl: t.pnl ? Number(t.pnl) : 0
     }));
 
-  // ARVUTAME KOKKU PnL (ainult ridadelt, kus on reaalselt kasum kirjas)
+  // Arvutame kokku kogu kasumi (PnL)
   const totalPnL = trades.reduce((sum, trade) => {
-    const value = trade.pnl ? Number(trade.pnl) : 0;
-    return sum + value;
+    return sum + (trade.pnl ? Number(trade.pnl) : 0);
   }, 0);
 
   return { trades, latest, chartData, totalPnL, loading };
