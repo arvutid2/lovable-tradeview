@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-// Kasutame Lovable'i vaikimisi klienti
 import { supabase } from "@/integrations/supabase/client";
 
+// Defineerime täpselt need väljad, mida pildil 6 nägime
 export interface TradeLog {
   id: number;
   created_at: string;
@@ -14,6 +14,9 @@ export interface TradeLog {
   market_pressure: number;
   fear_greed_index: number;
   is_panic_mode: boolean;
+  // LISA NEED READ SIIT:
+  pnl?: number | null; 
+  rsi?: number | null;
 }
 
 export const useTradeData = () => {
@@ -22,6 +25,7 @@ export const useTradeData = () => {
 
   const fetchTrades = async () => {
     try {
+      // Teeme päringu ilma tüübi sundimiseta alguses
       const { data, error } = await supabase
         .from('trade_logs')
         .select('*')
@@ -29,13 +33,14 @@ export const useTradeData = () => {
         .limit(50);
 
       if (error) {
-        console.error('Supabase error:', error);
+        console.error('Supabase error fetching trades:', error);
         return;
       }
       
-      setTrades(data as TradeLog[] || []);
+      // Kasutame 'unknown' vaheetappi, et TypeScript ei pahandaks
+      setTrades((data as unknown as TradeLog[]) || []);
     } catch (err) {
-      console.error('Unexpected error fetching trades:', err);
+      console.error('Unexpected error in useTradeData:', err);
     } finally {
       setLoading(false);
     }
@@ -43,7 +48,7 @@ export const useTradeData = () => {
 
   useEffect(() => {
     fetchTrades();
-    const interval = setInterval(fetchTrades, 15000); // 15 sekundi järel on piisav
+    const interval = setInterval(fetchTrades, 15000);
     return () => clearInterval(interval);
   }, []);
 
