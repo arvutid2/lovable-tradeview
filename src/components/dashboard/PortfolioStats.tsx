@@ -1,115 +1,79 @@
-import { LineChart, Line, ResponsiveContainer, YAxis, Tooltip } from "recharts";
-import type { PortfolioRow } from "@/hooks/usePortfolioData";
+import { Card } from "@/components/ui/card";
+import { ArrowUpIcon, ArrowDownIcon, Wallet, Bitcoin, DollarSign } from "lucide-react";
 
 interface PortfolioStatsProps {
-  latest: PortfolioRow | null;
-  history: PortfolioRow[];
-  pnl: number;
-  pnlPercent: number;
-  loading: boolean;
+  portfolio: {
+    usdt_balance: number;
+    btc_balance: number;
+    total_value_usdt: number;
+    last_updated?: string;
+  } | null;
 }
 
-function MiniEquityChart({ data }: { data: PortfolioRow[] }) {
-  // Graafik vajab vähemalt kahte punkti, et joon tekkeks
-  if (data.length < 2) return <div className="text-xs text-muted-foreground font-mono">Waiting for more data points…</div>;
-
-  const first = data[0].total_value_usdt;
-  const last = data[data.length - 1].total_value_usdt;
-  const color = last >= first ? "hsl(142 72% 50%)" : "hsl(0 84% 60%)";
-
-  return (
-    <ResponsiveContainer width="100%" height={80}>
-      <LineChart data={data}>
-        <YAxis domain={["auto", "auto"]} hide />
-        <Tooltip
-          content={({ active, payload }) => {
-            if (!active || !payload?.length) return null;
-            const d = payload[0].payload as PortfolioRow;
-            return (
-              <div className="glass-card rounded p-2 text-xs font-mono border border-[hsl(var(--glass-border))] bg-background/90 backdrop-blur-sm">
-                {/* PARANDUS: created_at -> last_updated */}
-                <div className="text-muted-foreground">{new Date(d.last_updated).toLocaleString()}</div>
-                <div className="font-bold" style={{ color }}>
-                  ${d.total_value_usdt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </div>
-              </div>
-            );
-          }}
-        />
-        <Line 
-          type="monotone" 
-          dataKey="total_value_usdt" 
-          stroke={color} 
-          strokeWidth={2} 
-          dot={false}
-          isAnimationActive={false} 
-        />
-      </LineChart>
-    </ResponsiveContainer>
-  );
-}
-
-export function PortfolioStats({ latest, history, pnl, pnlPercent, loading }: PortfolioStatsProps) {
-  if (loading) {
+export const PortfolioStats = ({ portfolio }: PortfolioStatsProps) => {
+  // Kui andmeid pole veel laetud, näitame tühje kaste (skeletti)
+  if (!portfolio) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="glass-card rounded-xl p-5 animate-pulse h-28" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-pulse">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-24 bg-green-900/10 border border-green-900/20 rounded-lg"></div>
         ))}
       </div>
     );
   }
 
-  const isProfit = pnl >= 0;
-  const pnlColor = isProfit ? "text-[hsl(var(--neon-green))]" : "text-[hsl(var(--neon-red))]";
-  const pnlSign = isProfit ? "+" : "";
+  // Formaatimise abi-funktsioonid puhta koodi jaoks
+  const formatCurrency = (val: number) => 
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val || 0);
+  
+  const formatCrypto = (val: number) => 
+    (val || 0).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 8 });
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-      {/* Total Balance */}
-      <div className="glass-card rounded-xl p-5 flex flex-col justify-center gap-1">
-        <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Total Balance</span>
-        <span className="text-2xl font-bold font-mono text-[hsl(var(--neon-green))] tabular-nums">
-          ${latest?.total_value_usdt?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "—"}
-        </span>
-        <span className="text-xs text-muted-foreground font-mono">USDT</span>
-      </div>
-
-      {/* Profit/Loss */}
-      <div className="glass-card rounded-xl p-5 flex flex-col justify-center gap-1">
-        <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Profit / Loss</span>
-        <span className={`text-2xl font-bold font-mono tabular-nums ${pnlColor}`}>
-          {pnlSign}${Math.abs(pnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        </span>
-        <span className={`text-xs font-mono ${pnlColor}`}>
-          {pnlSign}{pnlPercent.toFixed(2)}% from $10,000
-        </span>
-      </div>
-
-      {/* Assets */}
-      <div className="glass-card rounded-xl p-5 flex flex-col justify-center gap-1">
-        <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Assets</span>
-        <div className="flex flex-col gap-1">
-          <div className="flex justify-between items-baseline">
-            <span className="text-xs text-muted-foreground font-mono">BTC</span>
-            <span className="text-lg font-bold font-mono text-[hsl(var(--neon-amber))] tabular-nums">
-              {Number(latest?.btc_balance || 0).toFixed(6)}
-            </span>
-          </div>
-          <div className="flex justify-between items-baseline">
-            <span className="text-xs text-muted-foreground font-mono">USDT</span>
-            <span className="text-lg font-bold font-mono text-foreground tabular-nums">
-              {latest?.usdt_balance?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0.00"}
-            </span>
-          </div>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono">
+      {/* KOGUVÄÄRTUS (USDT) */}
+      <Card className="bg-black/40 border-green-900/30 p-4 hover:border-green-500/50 transition-colors">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] text-green-700 uppercase tracking-widest">Net Worth (USDT)</span>
+          <DollarSign className="w-4 h-4 text-green-600" />
         </div>
-      </div>
+        <div className="text-2xl font-bold text-green-500 tracking-tighter">
+          {formatCurrency(portfolio.total_value_usdt)}
+        </div>
+        <div className="flex items-center mt-1 text-[10px] text-green-800">
+          <span className="bg-green-900/20 px-1 rounded text-green-500">LIVE</span>
+          <span className="ml-2 opacity-50">STABLE_FEED_ACTIVE</span>
+        </div>
+      </Card>
 
-      {/* Equity Chart */}
-      <div className="glass-card rounded-xl p-5 flex flex-col justify-center gap-1">
-        <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Equity Curve</span>
-        <MiniEquityChart data={history} />
-      </div>
+      {/* BTC BALANSS */}
+      <Card className="bg-black/40 border-green-900/30 p-4 hover:border-green-500/50 transition-colors">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] text-green-700 uppercase tracking-widest">Asset: BTC</span>
+          <Bitcoin className="w-4 h-4 text-orange-500/70" />
+        </div>
+        <div className="text-2xl font-bold text-white tracking-tighter">
+          {formatCrypto(portfolio.btc_balance)} <span className="text-xs text-green-900">BTC</span>
+        </div>
+        <div className="mt-1 text-[10px] text-green-800 flex items-center gap-1">
+          <div className="w-1 h-1 rounded-full bg-green-500 animate-ping"></div>
+          SYNC_OK
+        </div>
+      </Card>
+
+      {/* USDT BALANSS */}
+      <Card className="bg-black/40 border-green-900/30 p-4 hover:border-green-500/50 transition-colors">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] text-green-700 uppercase tracking-widest">Asset: USDT</span>
+          <Wallet className="w-4 h-4 text-green-600" />
+        </div>
+        <div className="text-2xl font-bold text-white tracking-tighter">
+          {formatCurrency(portfolio.usdt_balance)}
+        </div>
+        <div className="mt-1 text-[10px] text-green-800 uppercase italic">
+          Liquid_Assets_Primary
+        </div>
+      </Card>
     </div>
   );
-}
+};

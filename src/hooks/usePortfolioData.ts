@@ -6,28 +6,30 @@ export const usePortfolioData = () => {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
+  const fetchPortfolio = async () => {
     try {
-      // 1. Võtame värskeima seisuga portfolio rea
-      const { data: portfolioData, error: pError } = await supabase
+      // Võtame ainult kõige viimase seisuga rea
+      const { data, error } = await supabase
         .from('portfolio')
         .select('*')
         .order('last_updated', { ascending: false })
-        .limit(1)
-        .single();
+        .limit(1);
 
-      if (pError) throw pError;
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        setPortfolio(data[0]);
+      }
 
-      // 2. Võtame ajaloo (kõik read graafiku jaoks)
-      const { data: historyData, error: hError } = await supabase
+      // Võtame kõik read graafiku jaoks
+      const { data: historyData, error: historyError } = await supabase
         .from('portfolio')
         .select('*')
         .order('last_updated', { ascending: true });
 
-      if (hError) throw hError;
+      if (historyError) throw historyError;
+      setHistory(historyData || []);
 
-      setPortfolio(portfolioData);
-      setHistory(historyData);
     } catch (error) {
       console.error("Viga andmete pärimisel:", error);
     } finally {
@@ -36,13 +38,11 @@ export const usePortfolioData = () => {
   };
 
   useEffect(() => {
-    fetchData();
-
-    // Valikuline: Uuenda andmeid iga 30 sekundi järel, mitte iga millisekund!
-    const interval = setInterval(fetchData, 30000);
-    
+    fetchPortfolio();
+    // Uuendame andmeid iga 60 sekundi järel
+    const interval = setInterval(fetchPortfolio, 60000);
     return () => clearInterval(interval);
-  }, []); // [] tühi massiiv siin on KRIITILINE, see peatab lõputu tsükli
+  }, []); // <--- See [] on väga oluline!
 
   return { portfolio, history, loading };
 };
