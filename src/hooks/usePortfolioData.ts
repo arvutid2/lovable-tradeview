@@ -16,19 +16,26 @@ export const usePortfolioData = () => {
 
   const fetchPortfolio = async () => {
     try {
-      // 1. Võtame kogu ajaloo (viimased 20 kirjet) graafiku jaoks
+      console.log("Fetching portfolio...");
       const { data, error } = await supabase
         .from('portfolio')
         .select('*')
-        .order('last_updated', { ascending: true }) // Graafik tahab kronoloogilist järjekorda
-        .limit(20);
+        .order('last_updated', { ascending: true });
 
       if (error) throw error;
 
       if (data && data.length > 0) {
-        setHistory(data);
-        // Viimane rida massiivis on meie "latest"
-        setPortfolio(data[data.length - 1]);
+        // Teisendame kõik väljad numbriteks, et vältida "string" vigu
+        const formattedData = data.map(row => ({
+          ...row,
+          usdt_balance: Number(row.usdt_balance),
+          btc_balance: Number(row.btc_balance),
+          total_value_usdt: Number(row.total_value_usdt)
+        }));
+
+        setHistory(formattedData);
+        setPortfolio(formattedData[formattedData.length - 1]);
+        console.log("Portfolio updated:", formattedData[formattedData.length - 1]);
       }
     } catch (error: any) {
       console.error('Error fetching portfolio:', error.message);
@@ -39,7 +46,7 @@ export const usePortfolioData = () => {
 
   useEffect(() => {
     fetchPortfolio();
-    const interval = setInterval(fetchPortfolio, 10000);
+    const interval = setInterval(fetchPortfolio, 5000); // Lühendame intervalli 5 sekundi peale testiks
     return () => clearInterval(interval);
   }, []);
 
