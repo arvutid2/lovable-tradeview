@@ -11,6 +11,9 @@ const Index = () => {
   const { trades, loading: tradesLoading } = useTradeData();
   const { portfolio, history, loading: portfolioLoading } = usePortfolioData();
 
+  // Derive latest market price from trades or history to compute BTC holdings when not provided
+  const latestPrice = trades?.[0]?.price ?? (history && history.length ? (history[history.length - 1] as any).price : null);
+
   // 2. Laadimisvaade (et vältida tühja lehte)
   if (portfolioLoading && tradesLoading) {
     return (
@@ -48,7 +51,7 @@ const Index = () => {
 
       <main className="max-w-7xl mx-auto px-4 space-y-6">
         {/* TOP STATS: Balanss, BTC hind jne */}
-        <HeroStats portfolio={portfolio} />
+        <HeroStats portfolio={portfolio} latestPrice={latestPrice} />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* LEFT SIDE: Graafik ja Insights */}
