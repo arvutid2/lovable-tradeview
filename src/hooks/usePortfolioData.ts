@@ -1,54 +1,48 @@
-import { useState, useEffect } from 'react';
-import { supabase } from "@/integrations/supabase/client";
-
-export interface PortfolioRow {
-  id: number;
-  usdt_balance: number;
-  btc_balance: number;
-  total_value_usdt: number;
-  last_updated: string;
-}
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 export const usePortfolioData = () => {
-  const [portfolio, setPortfolio] = useState<PortfolioRow | null>(null);
-  const [history, setHistory] = useState<PortfolioRow[]>([]);
+  const [portfolio, setPortfolio] = useState<any>(null);
+  const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchPortfolio = async () => {
+  const fetchData = async () => {
     try {
-      console.log("Fetching portfolio...");
-      const { data, error } = await supabase
+      // 1. Võtame värskeima seisuga portfolio rea
+      const { data: portfolioData, error: pError } = await supabase
+        .from('portfolio')
+        .select('*')
+        .order('last_updated', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (pError) throw pError;
+
+      // 2. Võtame ajaloo (kõik read graafiku jaoks)
+      const { data: historyData, error: hError } = await supabase
         .from('portfolio')
         .select('*')
         .order('last_updated', { ascending: true });
 
-      if (error) throw error;
+      if (hError) throw hError;
 
-      if (data && data.length > 0) {
-        // Teisendame kõik väljad numbriteks, et vältida "string" vigu
-        const formattedData = data.map(row => ({
-          ...row,
-          usdt_balance: Number(row.usdt_balance),
-          btc_balance: Number(row.btc_balance),
-          total_value_usdt: Number(row.total_value_usdt)
-        }));
-
-        setHistory(formattedData);
-        setPortfolio(formattedData[formattedData.length - 1]);
-        console.log("Portfolio updated:", formattedData[formattedData.length - 1]);
-      }
-    } catch (error: any) {
-      console.error('Error fetching portfolio:', error.message);
+      setPortfolio(portfolioData);
+      setHistory(historyData);
+    } catch (error) {
+      console.error("Viga andmete pärimisel:", error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchPortfolio();
-    const interval = setInterval(fetchPortfolio, 5000); // Lühendame intervalli 5 sekundi peale testiks
+    fetchData();
+
+    // Valikuline: Uuenda andmeid iga 30 sekundi järel, mitte iga millisekund!
+    const interval = setInterval(fetchData, 30000);
+    
     return () => clearInterval(interval);
-  }, []);
+  }, []); // [] tühi massiiv siin on KRIITILINE, see peatab lõputu tsükli
 
   return { portfolio, history, loading };
 };
