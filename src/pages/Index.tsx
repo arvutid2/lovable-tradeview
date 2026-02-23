@@ -1,99 +1,150 @@
-import { usePortfolioData } from "@/hooks/usePortfolioData";
-import { useTradeData } from "@/hooks/useTradeData";
-import { HeroStats } from "@/components/dashboard/HeroStats";
-import { PriceChart } from "@/components/dashboard/PriceChart";
-import { SignalsLog } from "@/components/dashboard/SignalsLog";
-import { AllInsightFeed } from "@/components/dashboard/AllInsightFeed";
-import { Loader2 } from "lucide-react";
+import { useEffect, useState } from 'react';
+import { supabase } from "@/integrations/supabase/client";
+import { 
+  LineChart, Line, XAxis, YAxis, Tooltip, Scatter, 
+  ComposedChart, ResponsiveContainer, CartesianGrid, Legend 
+} from 'recharts';
 
 const Index = () => {
-  // 1. Toome andmed hookidest
-  const { trades, loading: tradesLoading } = useTradeData();
-  const { portfolio, history, loading: portfolioLoading } = usePortfolioData();
+  const [data, setData] = useState<any[]>([]);
+  const [stats, setStats] = useState({ profit: 0, trades: 0, aiConfidence: 0 });
 
-  // Derive latest market price from trades or history to compute BTC holdings when not provided
-  const latestPrice = trades?.[0]?.price ?? (history && history.length ? (history[history.length - 1] as any).price : null);
+  const fetchData = async () => {
+    // Tõmbame andmed Supabase-st
+    const { data: logs, error } = await supabase
+      .from('trade_logs')
+      .select('*')
+      .order('created_at', { ascending: true })
+      .limit(100);
 
-  // 2. Laadimisvaade (et vältida tühja lehte)
-  if (portfolioLoading && tradesLoading) {
-    return (
-      <div className="min-h-screen bg-[#030303] flex flex-col items-center justify-center font-mono">
-        <Loader2 className="w-8 h-8 text-green-500 animate-spin mb-4" />
-        <div className="text-green-500 animate-pulse tracking-[0.2em] text-xs">
-          ESTABLISHING_SECURE_CONNECTION...
-        </div>
-      </div>
-    );
-  }
+    if (error) {
+      console.error("Viga andmete pärimisel:", error);
+      return;
+    }
+
+    if (logs && logs.length > 0) {
+      setData(logs);
+      
+      // Arvutame statistika
+      const totalProfit = logs.reduce((acc, curr) => acc + (Number(curr.pnl) || 0), 0);
+      const lastAi = logs[logs.length - 1]?.ai_prediction || 0;
+      const tradeCount = logs.filter(l => l.action !== 'HOLD').length;
+
+      setStats({ 
+        profit: totalProfit, 
+        trades: tradeCount, 
+        aiConfidence: lastAi 
+      });
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 30000); // Uuenda iga 30s
+    return () => clearInterval(interval);
+  }, []);
 
   return (
-    <div className="min-h-screen bg-[#030303] text-white font-mono selection:bg-green-500/30 pb-10">
-      {/* HEADER / TERMINAL STATUS */}
-      <header className="border-b border-green-900/30 p-4 mb-6 bg-black/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-green-500 tracking-tighter">
-              ARVUTID2 // <span className="text-white opacity-70 font-light">SYSTEM_DASHBOARD</span>
-            </h1>
-          </div>
-          <div className="flex gap-6 text-[10px]">
-            <div className="flex items-center gap-2">
-              <span className="text-green-900 uppercase">Status:</span>
-              <span className="text-green-500 animate-pulse">● ONLINE</span>
-            </div>
-            <div className="hidden md:flex items-center gap-2">
-              <span className="text-green-900 uppercase">Network:</span>
-              <span className="text-green-500 text-xs">MAINNET_V1</span>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#0f172a] text-slate-200 p-4 md:p-8 font-sans">
+      <div className="max-w-7xl mx-auto">
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold text-white mb-2">Crypto AI Dashboard</h1>
+          <p className="text-slate-400">Reaalajas XGBoost ennustused ja tehingud</p>
+        </header>
 
-      <main className="max-w-7xl mx-auto px-4 space-y-6">
-        {/* TOP STATS: Balanss, BTC hind jne */}
-        <HeroStats portfolio={portfolio} latestPrice={latestPrice} />
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* LEFT SIDE: Graafik ja Insights */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-black/60 border border-green-900/20 rounded-lg p-1 shadow-2xl shadow-green-900/5">
-              <PriceChart data={history} />
-            </div>
-            
-            <div className="bg-black/60 border border-green-900/20 rounded-lg p-4">
-              <div className="flex items-center gap-2 mb-4 border-b border-green-900/10 pb-2">
-                <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-                <h3 className="text-[10px] text-green-700 uppercase tracking-widest">Neural_Insight_Feed</h3>
-              </div>
-              <AllInsightFeed />
-            </div>
+        {/* STATISTIKA KAARDID */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-xl">
+            <p className="text-sm text-slate-400 uppercase tracking-wider mb-1">Kogukasum (PnL)</p>
+            <h2 className={`text-3xl font-bold ${stats.profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {stats.profit.toFixed(2)}%
+            </h2>
           </div>
-
-          {/* RIGHT SIDE: Live Trade Logid */}
-          <div className="lg:col-span-1">
-            <div className="bg-black/60 border border-green-900/20 rounded-lg p-4 h-full shadow-2xl">
-              <div className="flex justify-between items-center mb-6 border-b border-green-900/10 pb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-red-500 animate-pulse rounded-full" />
-                  <h3 className="text-[10px] text-green-700 uppercase tracking-widest font-bold">Live_Signal_Log</h3>
-                </div>
-                <span className="text-[9px] text-green-900">
-                  REFRESH: 10S
-                </span>
-              </div>
-              
-              {/* ANDMETE SAATMINE KOMPONENTI */}
-              <SignalsLog trades={trades} />
-            </div>
+          <div className="bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-xl">
+            <p className="text-sm text-slate-400 uppercase tracking-wider mb-1">AI Confidence</p>
+            <h2 className="text-3xl font-bold text-blue-400">
+              {(stats.aiConfidence * 100).toFixed(1)}%
+            </h2>
+          </div>
+          <div className="bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-xl">
+            <p className="text-sm text-slate-400 uppercase tracking-wider mb-1">Tehinguid kokku</p>
+            <h2 className="text-3xl font-bold text-white">{stats.trades}</h2>
           </div>
         </div>
-      </main>
 
-      {/* FOOTER */}
-      <footer className="max-w-7xl mx-auto px-4 mt-12 opacity-30 text-[9px] flex justify-between border-t border-green-900/20 pt-4 font-light italic">
-        <span>© 2026 ARVUTID2_CORP</span>
-        <span className="uppercase">End_to_end_encrypted_terminal_access</span>
-      </footer>
+        {/* GRAAFIK */}
+        <div className="bg-[#1e293b] p-6 rounded-2xl border border-slate-800 shadow-xl mb-8">
+          <h3 className="text-xl font-semibold mb-6">Hinnaliikumine & Signaalid</h3>
+          <div className="h-[400px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={data}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                <XAxis 
+                  dataKey="created_at" 
+                  hide={true}
+                />
+                <YAxis 
+                  domain={['auto', 'auto']} 
+                  orientation="right"
+                  stroke="#94a3b8"
+                  tick={{fontSize: 12}}
+                />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                  itemStyle={{ fontSize: '12px' }}
+                />
+                <Legend />
+                <Line 
+                  name="BTC Price"
+                  type="monotone" 
+                  dataKey="price" 
+                  stroke="#6366f1" 
+                  strokeWidth={2}
+                  dot={false} 
+                  activeDot={{ r: 4 }}
+                />
+                <Scatter name="BUY" data={data.filter(d => d.action === 'BUY')} fill="#22c55e" />
+                <Scatter name="SELL" data={data.filter(d => d.action === 'SELL')} fill="#ef4444" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* VIIMASED LOGID */}
+        <div className="bg-[#1e293b] rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+          <table className="w-full text-left">
+            <thead className="bg-[#0f172a] text-slate-400 text-sm uppercase">
+              <tr>
+                <th className="px-6 py-4 font-medium">Aeg</th>
+                <th className="px-6 py-4 font-medium">Tegevus</th>
+                <th className="px-6 py-4 font-medium">Hind</th>
+                <th className="px-6 py-4 font-medium">AI Ennustus</th>
+                <th className="px-6 py-4 font-medium">Sisu</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {data.slice().reverse().slice(0, 10).map((log, i) => (
+                <tr key={i} className="hover:bg-[#334155]/20 transition-colors">
+                  <td className="px-6 py-4 text-sm text-slate-400">
+                    {new Date(log.created_at).toLocaleTimeString()}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`px-2 py-1 rounded text-xs font-bold ${
+                      log.action === 'BUY' ? 'bg-green-500/20 text-green-400' : 
+                      log.action === 'SELL' ? 'bg-red-500/20 text-red-400' : 'text-slate-500'
+                    }`}>
+                      {log.action}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 font-mono text-sm">${log.price.toLocaleString()}</td>
+                  <td className="px-6 py-4 text-blue-400">{(log.ai_prediction * 100).toFixed(0)}%</td>
+                  <td className="px-6 py-4 text-sm text-slate-400 italic">{log.analysis_summary}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 };
