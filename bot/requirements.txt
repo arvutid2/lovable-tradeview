@@ -1,11 +1,11 @@
-supabase
-yfinance
-pandas_ta
-python-dotenv
-requests
-python-binance
+streamlit
 pandas
+supabase
+python-dotenv
 xgboost
-# optional for reinforcement learning/backtesting
-stable-baselines3
-gym
+joblib
+plotly
+ccxt
+pandas_ta
+numpy
+requests
