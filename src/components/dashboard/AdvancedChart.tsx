@@ -25,6 +25,8 @@ interface AdvancedChartProps {
 interface ChartDataPoint extends TradeLog {
   cumulativePnL?: number;
   rsi_MA?: number;
+  pnl?: number | null;
+  bot_confidence?: number | null;
 }
 
 function formatTime(dateStr: string) {
@@ -35,7 +37,7 @@ function calculateCumulativePnL(data: TradeLog[]): ChartDataPoint[] {
   let cumulative = 0;
   return data.map(item => ({
     ...item,
-    cumulativePnL: (cumulative += item.pnl || 0),
+    cumulativePnL: (cumulative += (item as any).pnl || 0),
   }));
 }
 
