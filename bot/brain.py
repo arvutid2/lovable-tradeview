@@ -1,103 +1,109 @@
 import os
 import pandas as pd
 import numpy as np
-import xgboost as xgb
-from joblib import dump
+import joblib
+import logging
+from xgboost import XGBClassifier
 from supabase import create_client
 from dotenv import load_dotenv
 from pathlib import Path
-import logging
 
-# 1. LOGIMISE SEADISTUS
+# Seadistame logimise
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [brain] %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- .ENV LAADIMINE ---
-env_path = Path(__file__).parent / '.env'
-if not env_path.exists():
-    env_path = Path(__file__).parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+# --- PARANDUS: Otsime .env faili nii bot kaustast kui ka juurkaustast ---
+env_path_local = Path('.') / '.env'
+env_path_parent = Path('..') / '.env'
 
-SUPABASE_URL = os.getenv('VITE_SUPABASE_URL') or os.getenv('SUPABASE_URL')
-SUPABASE_KEY = os.getenv('VITE_SUPABASE_ANON_KEY') or os.getenv('SUPABASE_KEY')
+if env_path_local.exists():
+    load_dotenv(dotenv_path=env_path_local)
+    logger.info("✅ Kasutan .env faili boti kaustast")
+elif env_path_parent.exists():
+    load_dotenv(dotenv_path=env_path_parent)
+    logger.info("✅ Kasutan .env faili juurkaustast")
+else:
+    logger.error("❌ .env faili ei leitud! Palun kopeeri .env fail boti kausta.")
 
-supabase = None
-try:
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        raise ValueError("Supabase URL või Key puudu!")
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    logger.info("✅ Supabase ühendus loodud.")
-except Exception as e:
-    logger.error(f"❌ Supabase ühenduse viga: {e}")
+# Võtame muutujad
+url = os.getenv('SUPABASE_URL')
+key = os.getenv('SUPABASE_KEY')
 
-def train_new_model():
-    logger.info("🧠 Alustan uue multi-class mudeli treenimist (Short/Long/DCA)...")
+if not url or not key:
+    logger.error("❌ SUPABASE_URL või SUPABASE_KEY on puudu! Kontrolli .env faili sisu.")
+    # See peatab koodi siin, et sa ei saaks SupabaseExceptionit
+    exit()
+
+supabase = create_client(url, key)
+
+# TUNNUSTE JÄRJEKORD - Peab olema sama mis bot.py-s!
+FEATURES = ['price', 'rsi', 'macd', 'macd_signal', 'vwap', 'stoch_k', 'stoch_d', 'atr', 'ema200', 'market_pressure']
+
+def train_brain():
+    logger.info("🧠 Alustan puhaste andmete laadimist...")
     
-    if not supabase:
-        logger.error("Supabase ühendus puudub.")
-        return
-
     try:
-        # Tõmbame andmed. NB! Nüüd võtame rohkem andmeid, et mustreid leida.
-        res = supabase.table("trade_logs").select("*").not_.is_("macd", "null").order("created_at", desc=True).limit(2000).execute()
-        data = res.data
-
-        if len(data) < 100:
-            logger.warning(f"⚠️ Liiga vähe andmeid uue loogika jaoks ({len(data)}). Vajame vähemalt 100.")
+        # Tõmbame andmed, kus olulised näitajad pole NULL
+        res = supabase.table("trade_logs").select("*") \
+            .not_.is_("macd", "null") \
+            .not_.is_("rsi", "null") \
+            .order("created_at", desc=True) \
+            .limit(2000).execute()
+        
+        if not res.data:
+            logger.error("❌ Andmeid ei leitud Supabase'ist!")
             return
 
-        df = pd.DataFrame(data)
+        df = pd.DataFrame(res.data)
+        
+        # Veendume, et kõik FEATURES on olemas
+        missing_cols = [c for c in FEATURES if c not in df.columns]
+        if missing_cols:
+            logger.error(f"❌ Tabelis puuduvad veerud: {missing_cols}")
+            return
+
+        df[FEATURES] = df[FEATURES].apply(pd.to_numeric, errors='coerce')
+        df = df.dropna(subset=FEATURES)
+
+        # TARGE MÄRGISTAMINE
         df = df.sort_values('created_at')
-
-        # --- MULTI-CLASS FEATURE ENGINEERING ---
-        # Definitsioonid: 2 = LONG, 1 = HOLD, 0 = SHORT
-        # Vaatame 15 minutit ettepoole
-        window = 15
-        df['future_max'] = df['price'].rolling(window=window).max().shift(-window)
-        df['future_min'] = df['price'].rolling(window=window).min().shift(-window)
+        df['future_price'] = df['price'].shift(-15) 
+        df['change_pct'] = (df['future_price'] - df['price']) / df['price'] * 100
         
-        def get_label(row):
-            change_up = (row['future_max'] - row['price']) / row['price'] * 100
-            change_down = (row['future_min'] - row['price']) / row['price'] * 100
-            
-            if change_up > 1.0: return 2 # LONG (potentsiaal tõusuks)
-            if change_down < -1.0: return 0 # SHORT (potentsiaal languseks)
-            return 1 # HOLD (stabiilne)
+        threshold = 0.1 
 
-        df['target'] = df.apply(get_label, axis=1)
+        def get_label(c):
+            if c > threshold: return 2   # LONG
+            if c < -threshold: return 0  # SHORT
+            return 1                     # HOLD
 
-        # Valime tunnused (Peab ühtima bot.py-ga)
-        features = [
-            'price', 'rsi', 'macd', 'macd_signal', 
-            'vwap', 'stoch_k', 'stoch_d', 'atr', 
-            'ema200', 'market_pressure'
-        ]
-        
-        df = df.dropna(subset=features + ['target'])
-        
-        X = df[features]
-        y = df['target']
+        df['label'] = df['change_pct'].apply(get_label)
+        df = df.dropna(subset=['label'])
 
-        # Mudeli treenimine - Multi-class softprob
-        model = xgb.XGBClassifier(
-            n_estimators=150,
-            max_depth=5,
+        X = df[FEATURES]
+        y = df['label']
+
+        logger.info(f"📊 Treeningandmed: {len(df)} rida. Jaotus: {y.value_counts().to_dict()}")
+
+        if len(df) < 10:
+            logger.warning("⚠️ Liiga vähe andmeid treenimiseks!")
+            return
+
+        model = XGBClassifier(
+            n_estimators=200,
+            max_depth=6,
             learning_rate=0.05,
             objective='multi:softprob',
             num_class=3,
-            random_state=42,
             eval_metric='mlogloss'
         )
         
         model.fit(X, y)
-        
-        model_path = Path(__file__).parent / 'trading_brain_xgb.pkl'
-        dump(model, model_path)
-        
-        logger.info(f"🚀 UUS MULTI-DIRECTIONAL MUDEL SALVESTATUD! ({len(df)} rida)")
+        joblib.dump(model, 'trading_brain_xgb.pkl')
+        logger.info("🚀 UUS AJU SALVESTATUD! (trading_brain_xgb.pkl)")
 
     except Exception as e:
         logger.error(f"❌ Viga treenimisel: {e}")
 
 if __name__ == "__main__":
-    train_new_model()
+    train_brain()
