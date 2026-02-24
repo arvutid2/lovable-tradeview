@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseExternal as supabase } from "@/lib/supabaseExternal";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, ComposedChart, Scatter } from 'recharts';
 import { Settings2, Activity, BrainCircuit, History, Zap, ShieldAlert, Gauge, RotateCcw } from "lucide-react";
 import { PortfolioStats } from "@/components/dashboard/PortfolioStats";
