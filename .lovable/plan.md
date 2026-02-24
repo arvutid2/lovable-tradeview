@@ -1,31 +1,73 @@
 
 
-# Connect to External Supabase Project
+# Graafikule boti tegevuste markerid + wallet suuruse muutmine
 
-## Overview
-Swap the dashboard from the internal Lovable Cloud database to your external Supabase project and fix Realtime.
+## Ulevaade
+Lisame graafikule koik boti tegevused (BUY_LONG, SELL_SHORT, DCA_LONG, DCA_SHORT, CLOSE_LONG, CLOSE_SHORT) erinevate varvidega, ning teeme initial wallet suuruse muutmise parema UX-iga koos automaatse umberarvutamisega.
 
-## Changes
+## Muudatused
 
-### 1. Update Supabase Client Configuration
-Update `src/integrations/supabase/client.ts` to point to your external project:
-- URL: `https://lnhxhjiqtwqlmbunrgtl.supabase.co`
-- Anon Key: `sb_publishable_CAQEJH6y2w-KbR8d3l-yQg_qZ-08zKj`
+### 1. Graafiku markerid koigi tegevuste jaoks
+Praegu naitab graafik ainult BUY ja SELL punkte. Laiendame seda koigi boti tegevustega:
 
-Since the auto-generated client reads from `.env`, we will create a separate client file (e.g., `src/lib/supabaseExternal.ts`) that hardcodes your external project credentials, and update all imports to use it. The anon key is a publishable key, so it is safe to include in the codebase.
+| Tegevus | Varv | Marker |
+|---------|------|--------|
+| BUY_LONG | Roheline | Ules-nool |
+| CLOSE_LONG | Punane | Alla-nool |
+| SELL_SHORT | Oranž | Alla-nool |
+| CLOSE_SHORT | Sinine | Ules-nool |
+| DCA_LONG | Heleroheline | + marker |
+| DCA_SHORT | Heleoranž | + marker |
 
-### 2. Update All Data Imports
-- Update `src/hooks/useTradeData.ts` to import from the new external client
-- Ensure the Realtime channel subscription uses the external client
+Iga marker lisatakse graafikule Scatter komponendina eraldi dataKey-ga.
 
-### 3. Verify Realtime Subscription
-The existing `useTradeData.ts` hook already subscribes to `INSERT` events on `trade_logs` via `supabase.channel()`. After switching the client, this will automatically listen to your external database. No logic changes needed.
+### 2. Wallet suuruse muutmine (parem UX)
+- Suurem, selgem input vaartuse jaoks (praegu on vaike 16px lai input)
+- Salvesta localStorage-sse (juba olemas)
+- "Reset" nupp mis paneb tagasi vaikimisi vaartuse (10,000 USDT)
+- Selge label "Starting Balance"
 
-### 4. Remove Demo Data Dependency
-No code changes needed here -- once pointed at the real database, only real rows will appear. The hook already sorts by `created_at` descending and limits to 100.
+### 3. Umberarvutamise loogika
+Kui wallet suurus muutub:
+- Koik PnL summad arvutatakse umbert uue algbalansi jargi
+- Balance = initialWallet + (summa koigist PnL protsentidest * initialWallet / 100)
+- Stats kaardid uuenevad kohe
+- Equity kurv arvutatakse uuesti (iga trade jargi jooksev balanss)
 
-## Technical Details
-- New file: `src/lib/supabaseExternal.ts` -- dedicated client for external Supabase
-- Modified file: `src/hooks/useTradeData.ts` -- update import path
-- Modified files: Any other components importing the Supabase client (currently only the hook)
+### 4. Jooksva balansi kurv (equity curve)
+Lisame graafikule teise Y-telje (paremal), mis naitab jooksvat portfelli vaartust. See arvutatakse:
+- Algus = initialWallet
+- Iga CLOSE_LONG/CLOSE_SHORT trade jargi: balance += pnl% * balance / 100
+
+---
+
+## Tehnilised detailid
+
+### Fail: `src/pages/Index.tsx`
+
+**Enriched logs loogika** - laiendame dataKey-sid:
+```
+enrichedLogs = logs.map(log => ({
+  ...log,
+  buyLongPoint: action contains 'BUY' ? price : null,
+  closeLongPoint: action === 'CLOSE_LONG' ? price : null,
+  sellShortPoint: action === 'SELL_SHORT' ? price : null,
+  closeShortPoint: action === 'CLOSE_SHORT' ? price : null,
+  dcaLongPoint: action === 'DCA_LONG' ? price : null,
+  dcaShortPoint: action === 'DCA_SHORT' ? price : null,
+  runningBalance: calculated running equity
+}))
+```
+
+**Graafiku Scatter komponendid** - 6 eraldi Scatter-it iga tegevuse tarvis eri varvidega.
+
+**Wallet input** - asendame praeguse vaelse inputi korraliku sektsiooniga headeris: label, suurem input, USDT suffix, reset nupp.
+
+**Running balance arvutus** - loopime labi koik logid kronoloogilises jarjekorras, hoides jooksvat balanssi ja arvutades iga sulgemistehingu juures uue vaartuse PnL% pohjal.
+
+**Stats umberarvutus** - koik statsid (balance, pnlAmount, winRate) arvutatakse initialBalance pohjal, nagu praegu, aga arvestades koiki close-tegevusi (CLOSE_LONG, CLOSE_SHORT), mitte ainult SELL.
+
+### Fail: `src/components/dashboard/PortfolioStats.tsx`
+- Lisame P/L % arvutuse initialBalance pohjal (mitte hardcoded 10,000)
+- Props kaudu saab initialBalance vaartuse
 
