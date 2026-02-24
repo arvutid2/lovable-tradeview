@@ -34,12 +34,41 @@ except Exception as e:
     logger.error(f"❌ Ühenduse viga: {e}")
     sys.exit(1)
 
-# --- 4. ANDMETE KOGUMINE ---
+# --- 4. FUNKTSIOONID ---
+
+def sync_position_from_supabase():
+    """Vaatab Supabase'ist viimast logi, et näha, kas oleme LONG positsioonis."""
+    try:
+        # Küsime viimast rida, kus action oli kas BUY või SELL
+        response = supabase.table("trade_logs") \
+            .select("action, price, avg_entry_price") \
+            .order("created_at", desc=True) \
+            .limit(1) \
+            .execute()
+        
+        if response.data:
+            last_log = response.data[0]
+            # Kui viimane tegevus oli ost või meil on avg_entry olemas, siis oleme sees
+            if last_log['action'] == "LONG" or last_log['avg_entry_price'] > 0:
+                logger.info(f"🔄 Positsioon taastatud andmebaasist: {last_log['avg_entry_price']}")
+                return {
+                    "entry_price": float(last_log['avg_entry_price'] if last_log['avg_entry_price'] > 0 else last_log['price']),
+                    "amount": 0.001 # Paper trade staatiline kogus
+                }
+        
+        logger.info("ℹ️ Avatud positsiooni andmebaasist ei leitud.")
+        return None
+    except Exception as e:
+        logger.error(f"❌ Ei saanud andmebaasist positsiooni taastada: {e}")
+        return None
+
 def fetch_data():
     try:
         klines = binance.get_klines(symbol=SYMBOL, interval=Client.KLINE_INTERVAL_1MINUTE, limit=300)
         df = pd.DataFrame(klines, columns=['ts', 'open', 'high', 'low', 'close', 'vol', 'close_ts', 'qav', 'num_trades', 'taker_base', 'taker_quote', 'ignore'])
         df[['open', 'high', 'low', 'close', 'vol']] = df[['open', 'high', 'low', 'close', 'vol']].astype(float)
+        
+        # VWAP vajab kellaaega indeksiks
         df['ts'] = pd.to_datetime(df['ts'], unit='ms')
         df.set_index('ts', inplace=True)
         df.rename(columns={'close': 'price'}, inplace=True)
@@ -66,32 +95,17 @@ def fetch_data():
     except Exception as e:
         logger.error(f"❌ Viga andmete hankimisel: {e}")
         return None
-def sync_position_from_binance():
-    """Kontrollib Binance'ist viimast ostutehingut, et taastada positsioon."""
-    try:
-        # Vaatame viimast 5 tehingut
-        trades = binance.get_my_trades(symbol=SYMBOL, limit=5)
-        if not trades:
-            return None
-        
-        # Leiame viimase 'BUY' tehingu
-        for trade in reversed(trades):
-            if trade['isBuyer']:
-                logger.info(f"🔄 Positsioon taastatud Binance'ist: {trade['price']}")
-                return {"entry_price": float(trade['price']), "amount": float(trade['qty'])}
-        return None
-    except Exception as e:
-        logger.error(f"❌ Ei saanud positsiooni sünki: {e}")
-        return None
-    
+
 # --- 5. PÕHITSÜKKEL ---
 def start_bot():
     global current_position
     
+    # SÜNKRONISEERIMINE STARTIMISEL
+    current_position = sync_position_from_supabase()
+
     # Laeme aju
-    model = None
-    if os.path.exists('trading_brain_xgb.pkl'):
-        model = joblib.load('trading_brain_xgb.pkl')
+    model = joblib.load('trading_brain_xgb.pkl') if os.path.exists('trading_brain_xgb.pkl') else None
+    if model:
         logger.info("🧠 AI Mudel laaditud.")
     else:
         logger.warning("⚠️ Mudelit ei leitud, bot kogub ainult andmeid.")
@@ -116,7 +130,7 @@ def start_bot():
             pnl = ((current_price - avg_entry) / avg_entry * 100) if avg_entry > 0 else 0.0
             summary = f"AI: {action} | L:{probs[2]:.2f} S:{probs[0]:.2f} PNL:{pnl:.2f}%"
 
-            # 3. Payload (Kõik võimalikud väljad)
+            # 3. Payload
             log_payload = {
                 "price": current_price,
                 "rsi": float(data['rsi']),
@@ -151,14 +165,13 @@ def start_bot():
                 current_position = None
                 logger.info(f"🚀 MÜÜK: {current_price}")
 
-            # 5. Salvestamine Supabase'i (Pommikindel)
+            # 5. Salvestamine
             try:
                 supabase.table("trade_logs").insert(log_payload).execute()
                 logger.info(f"📊 {summary} | Hind: {current_price}")
             except Exception as e:
-                logger.error(f"❌ Supabase viga (Võimalik veeru nimi valesti): {e}")
+                logger.error(f"❌ Supabase viga: {e}")
 
-        # Hoia tsükli aega
         time.sleep(max(0, 60 - (time.time() - start_time)))
 
 if __name__ == "__main__":
