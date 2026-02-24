@@ -10,183 +10,156 @@ from datetime import datetime
 from supabase import create_client
 from dotenv import load_dotenv
 from binance.client import Client
-from binance.exceptions import BinanceAPIException
 
-# --- 1. SEADISTUSED JA LOGIMINE (Mahukas osa) ---
+# --- 1. LOGIMINE JA SÄTTED ---
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - [%(levelname)s] - %(message)s',
-    handlers=[
-        logging.FileHandler("bot_log.log"),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 load_dotenv()
 
-# --- 2. ÜHENDUSED JA KONFIGURATSIOON ---
+# --- 2. KONFIGURATSIOON ---
 SYMBOL = "BTCUSDT"
-INTERVAL = Client.KLINE_INTERVAL_1MINUTE
 FEATURES = ['price', 'rsi', 'macd', 'macd_signal', 'vwap', 'stoch_k', 'stoch_d', 'atr', 'ema200', 'market_pressure']
+current_position = None 
 
+# --- 3. ÜHENDUSED ---
 try:
     supabase = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
     binance = Client(os.getenv('BINANCE_API_KEY'), os.getenv('BINANCE_API_SECRET'))
-    logger.info(f"✅ Ühendused loodud! Jälgitav paar: {SYMBOL}")
+    logger.info(f"✅ Ühendused loodud: {SYMBOL}")
 except Exception as e:
-    logger.error(f"❌ Kriitiline viga ühenduse loomisel: {e}")
+    logger.error(f"❌ Ühenduse viga: {e}")
     sys.exit(1)
 
-# --- 3. ABI-FUNKTSIOONID (Teevad koodi pikemaks ja turvalisemaks) ---
-
-def check_network():
-    """Kontrollib, kas ühendus Binance'iga on olemas."""
+# --- 4. ANDMETE KOGUMINE ---
+def fetch_data():
     try:
-        binance.ping()
-        return True
-    except:
-        return False
-
-def format_prediction_summary(action, probs):
-    """Koostab ilusa ülevaate Dashboardi jaoks."""
-    l_prob = probs[2]
-    s_prob = probs[0]
-    h_prob = probs[1]
-    return f"AI: {action} | L:{l_prob:.2f} S:{s_prob:.2f} H:{h_prob:.2f} [{datetime.now().strftime('%H:%M:%S')}]"
-
-# --- 4. TURUANDMETE ANALÜÜS ---
-
-def fetch_market_data(symbol=SYMBOL):
-    try:
-        if not check_network():
-            logger.warning("⚠️ Võrguühendus puudub, ootan...")
-            return None
-
-        # Toome andmed (300 küünalt stabiilsuse huvides)
-        klines = binance.get_klines(symbol=symbol, interval=INTERVAL, limit=300)
+        klines = binance.get_klines(symbol=SYMBOL, interval=Client.KLINE_INTERVAL_1MINUTE, limit=300)
         df = pd.DataFrame(klines, columns=['ts', 'open', 'high', 'low', 'close', 'vol', 'close_ts', 'qav', 'num_trades', 'taker_base', 'taker_quote', 'ignore'])
-        
-        # Tüübiteisendused
-        for col in ['open', 'high', 'low', 'close', 'vol']:
-            df[col] = df[col].astype(float)
-
+        df[['open', 'high', 'low', 'close', 'vol']] = df[['open', 'high', 'low', 'close', 'vol']].astype(float)
+        df['ts'] = pd.to_datetime(df['ts'], unit='ms')
+        df.set_index('ts', inplace=True)
         df.rename(columns={'close': 'price'}, inplace=True)
 
-        # Indikaatorite arvutamine (Pandas-TA)
+        # Tehniline analüüs
         df['rsi'] = ta.rsi(df['price'], length=14)
         macd = ta.macd(df['price'])
-        if macd is not None:
-            df['macd'] = macd['MACD_12_26_9']
-            df['macd_signal'] = macd['MACDs_12_26_9']
-        
+        df['macd'] = macd.iloc[:, 0] if macd is not None else 0
+        df['macd_signal'] = macd.iloc[:, 2] if macd is not None else 0
         df['ema200'] = ta.ema(df['price'], length=200)
         df['vwap'] = ta.vwap(df['high'], df['low'], df['price'], df['vol'])
-        
         stoch = ta.stoch(df['high'], df['low'], df['price'])
-        if stoch is not None:
-            df['stoch_k'] = stoch['STOCHk_14_3_3']
-            df['stoch_d'] = stoch['STOCHd_14_3_3']
-            
+        df['stoch_k'] = stoch.iloc[:, 0] if stoch is not None else 0
+        df['stoch_d'] = stoch.iloc[:, 1] if stoch is not None else 0
         df['atr'] = ta.atr(df['high'], df['low'], df['price'])
-        
-        # Edasijõudnud indikaator: Turu surve
         df['market_pressure'] = (df['price'] - df['low']) / (df['high'] - df['low'] + 0.0000001) * df['vol']
         
-        # Puhastamine
-        last_row = df.iloc[-1].fillna(0).to_dict()
+        bbands = ta.bbands(df['price'], length=20, std=2)
+        df['bb_upper'] = bbands.iloc[:, 2] if bbands is not None else df['price']
+        df['bb_lower'] = bbands.iloc[:, 0] if bbands is not None else df['price']
+        df['is_panic_mode'] = df['price'] < df['bb_lower']
         
-        # Kontroll, kas indikaatorid on arvutatud
-        if last_row['ema200'] == 0:
-            logger.warning("⚠️ EMA200 pole veel valmis (vajab rohkem andmeid)")
-            
-        return last_row
-
-    except BinanceAPIException as e:
-        logger.error(f"❌ Binance API viga: {e}")
-        return None
+        return df.iloc[-1].fillna(0).to_dict()
     except Exception as e:
-        logger.error(f"❌ Tundmatu viga andmete toomisel: {e}")
+        logger.error(f"❌ Viga andmete hankimisel: {e}")
         return None
-
-# --- 5. AI AJU (XGBOOST ENNUSTUS) ---
-
-def get_ai_prediction(data, model):
-    if model is None:
-        return "HOLD", 0.0, [0.0, 1.0, 0.0]
-    
+def sync_position_from_binance():
+    """Kontrollib Binance'ist viimast ostutehingut, et taastada positsioon."""
     try:
-        # Features täpselt õiges järjekorras
-        feat_vector = [float(data.get(f, 0)) for f in FEATURES]
-        feat_array = np.array([feat_vector])
+        # Vaatame viimast 5 tehingut
+        trades = binance.get_my_trades(symbol=SYMBOL, limit=5)
+        if not trades:
+            return None
         
-        # Tõenäosused
-        probs = model.predict_proba(feat_array)[0]
-        actions = ["SHORT", "HOLD", "LONG"]
-        
-        best_idx = np.argmax(probs)
-        action = actions[best_idx]
-        confidence = float(probs[best_idx])
-        
-        return action, confidence, probs.tolist()
+        # Leiame viimase 'BUY' tehingu
+        for trade in reversed(trades):
+            if trade['isBuyer']:
+                logger.info(f"🔄 Positsioon taastatud Binance'ist: {trade['price']}")
+                return {"entry_price": float(trade['price']), "amount": float(trade['qty'])}
+        return None
     except Exception as e:
-        logger.error(f"❌ Viga AI ennustusel: {e}")
-        return "HOLD", 0.0, [0.0, 1.0, 0.0]
-
-# --- 6. PEAMINE TÖÖTSÜKKEL ---
-
+        logger.error(f"❌ Ei saanud positsiooni sünki: {e}")
+        return None
+    
+# --- 5. PÕHITSÜKKEL ---
 def start_bot():
-    logger.info("--- 🤖 KAUPLEMISBOT KÄIVITATUD ---")
+    global current_position
     
-    # Mudeli laadimine
-    try:
+    # Laeme aju
+    model = None
+    if os.path.exists('trading_brain_xgb.pkl'):
         model = joblib.load('trading_brain_xgb.pkl')
-        logger.info("🧠 AI Mudel laaditud edukalt.")
-    except:
-        model = None
-        logger.warning("⚠️ Mudelit ei leitud. Bot töötab ainult andmete kogujana.")
+        logger.info("🧠 AI Mudel laaditud.")
+    else:
+        logger.warning("⚠️ Mudelit ei leitud, bot kogub ainult andmeid.")
 
     while True:
         start_time = time.time()
-        
-        # 1. Toome andmed
-        data = fetch_market_data()
+        data = fetch_data()
         
         if data:
-            # 2. Küsime AI arvamust
-            action, confidence, probs = get_ai_prediction(data, model)
-            summary = format_prediction_summary(action, probs)
-            
-            # 3. Logime tulemuse terminali
-            logger.info(f"📊 Hind: {data['price']:.2f} | {summary}")
-            
-            # 4. Salvestame Supabase'i
+            # 1. AI Ennustus
+            feat_vector = [float(data.get(f, 0)) for f in FEATURES]
+            if model:
+                probs = model.predict_proba(np.array([feat_vector]))[0]
+                action = ["SHORT", "HOLD", "LONG"][np.argmax(probs)]
+                confidence = float(np.max(probs))
+            else:
+                action, confidence, probs = "HOLD", 0.0, [0, 1, 0]
+
+            # 2. Arvutused
+            current_price = float(data['price'])
+            avg_entry = float(current_position['entry_price']) if current_position else 0.0
+            pnl = ((current_price - avg_entry) / avg_entry * 100) if avg_entry > 0 else 0.0
+            summary = f"AI: {action} | L:{probs[2]:.2f} S:{probs[0]:.2f} PNL:{pnl:.2f}%"
+
+            # 3. Payload (Kõik võimalikud väljad)
             log_payload = {
-                **{f: float(data.get(f, 0)) for f in FEATURES},
-                "action": action,
+                "price": current_price,
+                "rsi": float(data['rsi']),
+                "macd": float(data['macd']),
+                "macd_signal": float(data['macd_signal']),
+                "vwap": float(data['vwap']),
+                "stoch_k": float(data['stoch_k']),
+                "stoch_d": float(data['stoch_d']),
+                "atr": float(data['atr']),
+                "ema200": float(data['ema200']),
+                "market_pressure": float(data['market_pressure']),
+                "symbol": SYMBOL,
+                "pnl": pnl,
                 "ai_prediction": confidence,
+                "bot_confidence": confidence,
+                "fear_greed_index": 50,
+                "is_panic_mode": bool(data['is_panic_mode']),
+                "bb_upper": float(data['bb_upper']),
+                "bb_lower": float(data['bb_lower']),
+                "volume": float(data['vol']),
+                "avg_entry_price": avg_entry,
+                "action": action,
                 "analysis_summary": summary,
                 "created_at": datetime.utcnow().isoformat()
             }
-            
+
+            # 4. Kauplemise otsus
+            if action == "LONG" and confidence > 0.45 and current_position is None:
+                current_position = {"entry_price": current_price}
+                logger.info(f"🚀 OST: {current_price}")
+            elif action == "SHORT" and confidence > 0.45 and current_position is not None:
+                current_position = None
+                logger.info(f"🚀 MÜÜK: {current_price}")
+
+            # 5. Salvestamine Supabase'i (Pommikindel)
             try:
                 supabase.table("trade_logs").insert(log_payload).execute()
+                logger.info(f"📊 {summary} | Hind: {current_price}")
             except Exception as e:
-                logger.error(f"❌ Viga Supabase salvestamisel: {e}")
+                logger.error(f"❌ Supabase viga (Võimalik veeru nimi valesti): {e}")
 
-            # 5. SIIN ON KOHT TEHINGUTE JAOKS (DCA/Orders)
-            # Näide:
-            # if action == "LONG" and confidence > 0.65:
-            #    execute_trade("BUY")
-
-        # Hoia tsükli aega (nt täpselt 60 sek vahet)
-        elapsed = time.time() - start_time
-        sleep_time = max(0, 60 - elapsed)
-        time.sleep(sleep_time)
+        # Hoia tsükli aega
+        time.sleep(max(0, 60 - (time.time() - start_time)))
 
 if __name__ == "__main__":
-    try:
-        start_bot()
-    except KeyboardInterrupt:
-        logger.info("🛑 Bot peatatud kasutaja poolt.")
-    except Exception as e:
-        logger.error(f"⚠️ Bot kukkus kokku: {e}")
+    start_bot()
